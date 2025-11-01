@@ -15,7 +15,7 @@ export const login = async (email, password) => {
     }
 
     const data = await response.json();
-    return data.token; // Assuming the API returns a token on successful login
+    return data; // Assuming the API returns a token on successful login
   } catch (error) {
     console.error('Error during login:', error);
     throw error;

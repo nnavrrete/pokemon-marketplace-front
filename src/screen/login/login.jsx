@@ -48,7 +48,10 @@ function App() {
     setUserData(null);
     try {
       const receivedToken = await login(email, password);
-      localStorage.setItem('token', receivedToken);
+      console.log('Received token:', receivedToken);
+      localStorage.setItem('token', receivedToken.token);
+      localStorage.setItem('usuario_id', receivedToken.usuario_id);
+      console.log(localStorage.getItem('usuario_id'));
       setToken(receivedToken);
       navigator('/home');
       console.log('Login successful, token:', receivedToken);
