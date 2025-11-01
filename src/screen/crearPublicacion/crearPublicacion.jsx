@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getCartas, crearPublicacion } from '../../api/cartas';
+import TCGdex from '@tcgdex/sdk'
 
-const CrearPublicacion = () => {
+const CrearPublicacion =  () => {
   // Estado para los datos del formulario
   const [formData, setFormData] = useState({
     usuario_id: localStorage.getItem("usuario_id"),
     carta_id: '',
+    colection_id: null,
     precio: '',
-    estado: 'Nuevo', // Valor por defecto
+    estado: 'Ungraded', // Valor por defecto
   });
 
   // Estado para la lista de cartas disponibles
@@ -20,33 +22,106 @@ const CrearPublicacion = () => {
   const [loading, setLoading] = useState(true);
   const [mensaje, setMensaje] = useState('');
   const [isError, setIsError] = useState(false);
-
   // Estado para el dropdown personalizado
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const [lang, setLang] = useState('es');
+  const [colection, setColection] = useState(null);
+  const [setsList, setSetsList] = useState([]);
+  const [isSetsDropdownOpen, setIsSetsDropdownOpen] = useState(false);
+  const setsDropdownRef = useRef(null);
+  const [setsSearchTerm, setSetsSearchTerm] = useState('');
+  
 
-  // Cargar las cartas cuando el componente se monta
   useEffect(() => {
-    const fetchCartas = async () => {
-      try {
-        const data = await getCartas();
-        setCartas(data);
-        // Pre-seleccionar la primera carta si la lista no está vacía
-        if (data.length > 0) {
-          setFormData(prev => ({ ...prev, carta_id: data[0].id }));
-          setSelectedCardImage(data[0].imagen_url);
-        }
-      } catch (error) {
-        console.error('Error fetching cartas:', error);
-        setMensaje('Error al cargar las cartas disponibles.');
-        setIsError(true);
-      } finally {
-        setLoading(false);
+    const handleClickOutside = (event) => {
+      if (setsDropdownRef.current && !setsDropdownRef.current.contains(event.target)) {
+        setIsSetsDropdownOpen(false);
       }
     };
-
-    fetchCartas();
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
+
+  
+  // Cargar las cartas cuando el componente se monta
+
+  const fetchAllCards = async () => {
+    try {
+      const tcg = new TCGdex(lang);
+        const data = await tcg.card.list();
+        const allCard = data || [];
+        setCartas(allCard);
+        console.log(data);
+        setCartas(data);
+        if (data.length > 0) {
+          setFormData(prev => ({ ...prev, carta_id: data[0].id }));
+            setSelectedCardImage(data[0].image ? `${data[0].image}/high.webp` : '');
+        } else {
+            setCartas([]);
+            setFormData(prev => ({ ...prev, carta_id: '' }));
+            setSelectedCardImage('');
+        }
+    } catch (error) {
+        console.error('Error fetching all cards:', error);
+        setMensaje('Error al cargar las cartas disponibles.');
+        setIsError(true);
+    } finally {
+        setLoading(false);
+    }
+    };
+
+
+  const fetchcardsBySet = async (setId) => {
+    setLoading(true);
+    try {
+      const data = await fetch(`https://api.tcgdex.net/v2/${lang}/sets/${setId}`).then(res => res.json());
+      console.log('Datos de la colección obtenidos:', data);
+      const cards = data.cards || [];
+      setCartas(cards);
+      if (cards.length > 0) {
+        setFormData(prev => ({ ...prev, carta_id: cards[0].id }));
+        setSelectedCardImage(cards[0].image ? `${cards[0].image}/high.webp` : '');
+      } else {
+        setCartas([]);
+        setFormData(prev => ({ ...prev, carta_id: '' }));
+        setSelectedCardImage('');
+      }
+    } catch (error) {
+      console.error('Error fetching cartas by set:', error);
+      setMensaje('Error al cargar las cartas de la colección seleccionada.');
+      setIsError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllCards();
+  }, [lang]);
+
+
+  useEffect(() => {
+    const fetchSets = async () => {
+      try {
+        // 1. Se crea una instancia del SDK con el idioma seleccionado
+        const tcg = new TCGdex(lang);
+        // 2. Se obtienen las colecciones (sets) usando la instancia
+        const setsData = await tcg.fetch('sets');
+        // 3. Se actualiza el estado con los datos obtenidos
+        setSetsList(setsData || []);
+        setCartas([]);
+      } catch (error) {
+        console.error("Error al obtener las colecciones de TCGdex:", error);
+        setSetsList([]); // En caso de error, se deja la lista vacía
+      }
+    };
+    fetchSets();
+  }, [lang]);
+
+  
 
   // Efecto para cerrar el dropdown si se hace clic fuera
   useEffect(() => {
@@ -73,9 +148,24 @@ const CrearPublicacion = () => {
   // Manejador para seleccionar una carta del dropdown personalizado
   const handleCardSelect = (carta) => {
     setFormData(prev => ({ ...prev, carta_id: carta.id }));
-    setSelectedCardImage(carta.imagen_url);
+    setSelectedCardImage(carta.image ? `${carta.image}/high.webp` : '');
     setIsDropdownOpen(false);
   };
+
+    const handleSetSelect = (set) => {
+        console.log('Set seleccionado:', set);
+    if (set) {
+        setColection(set.id);
+        fetchcardsBySet(set.id);
+    } else {
+        setColection(null);
+        fetchAllCards();
+    }
+    setIsSetsDropdownOpen(false);
+  };
+
+
+
 
   // Manejador para el envío del formulario
   const handleSubmit = async (e) => {
@@ -96,7 +186,7 @@ const CrearPublicacion = () => {
       setIsError(false);
       // Resetear formulario
       if (cartas.length > 0) {
-        setFormData(prev => ({ ...prev, carta_id: cartas[0].id, precio: '', estado: 'Nuevo' }));
+        setFormData(prev => ({ ...prev, carta_id: cartas[0].id, precio: '', estado: 'Ungraded' }));
         setSelectedCardImage(cartas[0].imagen_url);
       }
       setSearchTerm('');
@@ -112,7 +202,11 @@ const CrearPublicacion = () => {
 
   // Filtrar cartas basado en el término de búsqueda
   const filteredCartas = cartas.filter(carta =>
-    carta.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    carta && carta.name && carta.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredSets = setsList.filter(set =>
+    set && set.name && set.name.toLowerCase().includes(setsSearchTerm.toLowerCase())
   );
 
   return (
@@ -141,6 +235,60 @@ const CrearPublicacion = () => {
               
               {/* Custom Select con Búsqueda */}
               <div className="flex flex-col gap-2 text-lg">
+                <span className="text-gray-300">Idioma:</span>
+                <select name="lang" value={lang} onChange={(e) => setLang(e.target.value)} disabled={loading} className="bg-gray-700 border-2 border-gray-600 rounded-md p-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition duration-300">
+                  <option value="es">Español</option>
+                  <option value="en">Inglés</option>
+                </select>
+                </div>
+
+              {/* Custom Select con Búsqueda */}
+              <div className="flex flex-col gap-2 text-lg">
+                <span className="text-gray-300">Colección:</span>
+                <div className="relative" ref={setsDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsSetsDropdownOpen(!isSetsDropdownOpen)}
+                    disabled={loading || setsList.length === 0}
+                    className="w-full bg-gray-700 border-2 border-gray-600 rounded-md p-3 text-white text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition duration-300 disabled:opacity-50"
+                  >
+                    <span>
+                      {colection
+                        ? setsList.find(s => s.id === colection)?.name || 'Todas las colecciones'
+                        : 'Todas las colecciones'}
+                    </span>
+                    <svg className={`w-5 h-5 transition-transform duration-200 ${isSetsDropdownOpen ? 'transform rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </button>
+
+                  {isSetsDropdownOpen && (
+                    <div className="absolute z-20 w-full mt-1 bg-gray-800 border border-gray-600 rounded-md shadow-lg">
+                      <div className="p-2 border-b border-gray-700">
+                        <input
+                          type="text"
+                          placeholder="Buscar colección..."
+                          value={setsSearchTerm}
+                          onChange={(e) => setSetsSearchTerm(e.target.value)}
+                          autoFocus
+                          className="w-full bg-gray-700 border-2 border-gray-600 rounded-md p-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                        />
+                      </div>
+                      <ul className="max-h-56 overflow-y-auto">
+                      <li onClick={() => handleSetSelect(null)} className="px-4 py-2 text-white hover:bg-cyan-600 cursor-pointer">Todas las colecciones</li>
+                        {filteredSets.length > 0 ? (
+                      filteredSets.map((set) => (                           <li key={set.id} onClick={() => handleSetSelect(set)} className="px-4 py-2 text-white hover:bg-cyan-600 cursor-pointer">
+                      {set.name}                          </li>
+                    
+                          ))
+                        ) : (
+                          <li className="px-4 py-2 text-gray-400">No se encontraron colecciones</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+              <div className="flex flex-col gap-2 text-lg">
                 <span className="text-gray-300">Carta a vender:</span>
                 <div className="relative" ref={dropdownRef}>
                   <button
@@ -151,7 +299,7 @@ const CrearPublicacion = () => {
                   >
                     <span>
                       {formData.carta_id
-                        ? cartas.find(c => c.id.toString() === formData.carta_id.toString())?.nombre || 'Selecciona una carta'
+                         ? cartas.find(c => c.id.toString() === formData.carta_id.toString())?.name || 'Selecciona una carta'
                         : 'Selecciona una carta'}
                     </span>
                     <svg className={`w-5 h-5 transition-transform duration-200 ${isDropdownOpen ? 'transform rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
@@ -171,13 +319,13 @@ const CrearPublicacion = () => {
                       </div>
                       <ul className="max-h-56 overflow-y-auto">
                         {filteredCartas.length > 0 ? (
-                          filteredCartas.map((carta) => (
+                          filteredCartas.map((cartas) => (
                             <li
-                              key={carta.id}
-                              onClick={() => handleCardSelect(carta)}
+                              key={cartas.id}
+                              onClick={() => handleCardSelect(cartas)}
                               className="px-4 py-2 text-white hover:bg-cyan-600 cursor-pointer"
                             >
-                              {carta.nombre} ({carta.rareza})
+                              {cartas.name} ({cartas.rarity})
                             </li>
                           ))
                         ) : (
@@ -210,6 +358,9 @@ const CrearPublicacion = () => {
                     <option value="PSA 1">PSA 1</option>
                 </select>
               </label>
+
+              <div className="flex flex-col gap-2 text-lg">
+                </div>
 
               <div className="flex flex-col gap-4 mt-4">
                 <button type="submit" disabled={loading} className="bg-cyan-500 hover:bg-cyan-600 text-gray-900 font-bold py-3 px-6 rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-cyan-300 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
